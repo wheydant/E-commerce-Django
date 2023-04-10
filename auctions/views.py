@@ -4,7 +4,7 @@ from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse
 
-from .models import Category, User, Listing, Comment
+from .models import Category, User, Listing, Comment, Bid
 
 def removeWatchlist(request,id):
     listingData = Listing.objects.get(pk=id)
@@ -23,12 +23,62 @@ def listing(request, id):
     listingData = Listing.objects.get(pk=id)
     isLisitingInWatchlist = request.user in listingData.watchlist.all()
     allComments = Comment.objects.filter(listing = listingData)
+    isOwner = request.user.username == listingData.owner.username
     return render(request, "auctions/listing.html" , {
         "listing": listingData,
         "isLisitingInWatchlist": isLisitingInWatchlist,
-        "allComments" : allComments
+        "allComments" : allComments,
+        "isOwner": isOwner
     }
 )
+
+
+def closeAuction(request,id):
+    listingData = Listing.objects.get(pk=id)
+    listingData.isActive = False
+    listingData.save()
+    isLisitingInWatchlist = request.user in listingData.watchlist.all()
+    allComments = Comment.objects.filter(listing = listingData)
+    isOwner = request.user.username == listingData.owner.username
+    return render(request, "auctions/listing.html" , {
+        "listing": listingData,
+        "isLisitingInWatchlist": isLisitingInWatchlist,
+        "allComments" : allComments,
+        "isOwner": isOwner,
+        "update" : True,
+        "message" : "Congratulations! Your austion is closed."
+    }
+)
+
+
+def addBid(request, id):
+    newBid = request.POST['newBid']
+    listingData = Listing.objects.get(pk=id)
+    isLisitingInWatchlist = request.user in listingData.watchlist.all()
+    isOwner = request.user.username == listingData.owner.username
+    allComments = Comment.objects.filter(listing = listingData)
+    if int(newBid) > listingData.price.bid:
+        updateBid = Bid(user=request.user, bid=newBid)
+        updateBid.save()
+        listingData.price = updateBid
+        listingData.save()
+        return render(request, "auctions/listing.html",{
+            "listing":listingData,
+            "message": "Bid was updated successfully",
+            "update" : True,
+            "isLisitingInWatchlist": isLisitingInWatchlist,
+            "allComments" : allComments,
+            "isOwner": isOwner
+        })
+    else:
+        return render(request, "auctions/listing.html",{
+            "listing":listingData,
+            "message": "Bid update failed",
+            "update" : False,
+            "isLisitingInWatchlist": isLisitingInWatchlist,
+            "allComments" : allComments,
+            "isOwner": isOwner
+        })
 
 def addComment(request, id):
     currentUser = request.user
@@ -126,15 +176,20 @@ def createListing(request):
         category = request.POST["category"]
 
         categoryData = Category.objects.get(categoryName = category)
+        
         #Current User
         currentUser = request.user
+
+        #create a bid object
+        bid = Bid(bid=float(price), user=currentUser)
+        bid.save()
 
         #Create New listing
         newListing = Listing(
              title=title,
              description=description,
              img=imgurl,
-             price=float(price),
+             price=bid,
              category=categoryData,
              owner=currentUser
         )
